@@ -6,6 +6,8 @@ import os
 import tempfile
 import time
 import uuid
+from pathlib import Path
+from xml.etree import ElementTree
 
 import gi
 
@@ -181,24 +183,49 @@ class Wayland:
                        "KWin did not report the active window.")
 
     def run_relay(self, body, received, missing_message):
-        name = f"speedbuilder-{uuid.uuid4().hex}"
-        with tempfile.NamedTemporaryFile("w", suffix=".js", encoding="utf-8") as script:
-            script.write(f"const BUS = {json.dumps(self.bus.get_unique_name())};\n")
-            script.write(f"const RELAY_OBJECT = {json.dumps(self.relay_path)};\n")
-            script.write(body)
-            script.flush()
-            number, = self.call(KWIN, "/Scripting", "org.kde.kwin.Scripting", "loadScript",
-                                "(ss)", (script.name, name))
-            if number < 0:
-                raise WaylandError("KWin could not load SpeedBuilder's window script.")
-            self.script_name = name
-            self.call(KWIN, f"/Scripting/Script{number}", "org.kde.kwin.Script", "run")
-            deadline = time.monotonic() + 3
-            while not received() and time.monotonic() < deadline:
-                self.pump()
-                time.sleep(.01)
+        xml, = self.call(KWIN, "/Scripting", "org.freedesktop.DBus.Introspectable", "Introspect")
+        occupied = {node.get("name") for node in ElementTree.fromstring(xml).findall("node")}
+        # KWin can reuse an occupied D-Bus path after scripts close out of order.
+        # Reserve colliding slots with inert scripts; never run the old object.
+        reservations = []
+        try:
+            with tempfile.TemporaryDirectory(prefix="speedbuilder-") as directory:
+                for attempt in range(len(occupied) + 1):
+                    script = Path(directory) / f"{attempt}.js"
+                    script.write_text("// Reserved script slot.\n", encoding="utf-8")
+                    name = f"speedbuilder-{uuid.uuid4().hex}"
+                    number, = self.call(KWIN, "/Scripting", "org.kde.kwin.Scripting", "loadScript",
+                                        "(ss)", (str(script), name))
+                    if number < 0:
+                        raise WaylandError("KWin could not load SpeedBuilder's window script.")
+                    if f"Script{number}" in occupied:
+                        reservations.append(name)
+                        continue
+                    self.script_name = name
+                    script.write_text(
+                        f"const BUS = {json.dumps(self.bus.get_unique_name())};\n"
+                        f"const RELAY_OBJECT = {json.dumps(self.relay_path)};\n" + body,
+                        encoding="utf-8",
+                    )
+                    self.call(KWIN, f"/Scripting/Script{number}", "org.kde.kwin.Script", "run")
+                    deadline = time.monotonic() + 3
+                    while not received() and time.monotonic() < deadline:
+                        self.pump()
+                        time.sleep(.01)
+                    break
+                else:
+                    raise WaylandError("KWin could not allocate a window script slot.")
+        finally:
+            for name in reversed(reservations):
+                self.unload_relay(name)
         if not received():
             raise WaylandError(missing_message)
+
+    def unload_relay(self, name):
+        try:
+            self.call(KWIN, "/Scripting", "org.kde.kwin.Scripting", "unloadScript", "(s)", (name,))
+        except GLib.Error:
+            pass
 
     def request(self, interface, method, signature, args, options):
         token = "speedbuilder_" + uuid.uuid4().hex
@@ -429,11 +456,7 @@ class Wayland:
             except GLib.Error:
                 pass
         if self.script_name:
-            try:
-                self.call(KWIN, "/Scripting", "org.kde.kwin.Scripting", "unloadScript",
-                          "(s)", (self.script_name,))
-            except GLib.Error:
-                pass
+            self.unload_relay(self.script_name)
         for subscription in self.subscriptions:
             self.bus.signal_unsubscribe(subscription)
         if self.registration:
