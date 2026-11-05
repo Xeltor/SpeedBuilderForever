@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+app_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+python="$app_dir/../.venv/bin/python"
+if [ ! -x "$python" ]; then
+    python=/usr/bin/python3
+fi
+if ! "$python" -c 'from PySide6 import QtWidgets'; then
+    if command -v kdialog >/dev/null 2>&1; then
+        kdialog --error "Install Qt for Python (python3-pyside6 on Fedora) from your software manager, then reopen SpeedBuilderForever."
+    fi
+    exit 1
+fi
+exec "$python" "$app_dir/gui.py"

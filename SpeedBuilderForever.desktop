@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=SpeedBuilderForever
+Comment=Calibrate and run SpeedBuilder for Hekili
+Icon=preferences-desktop-keyboard
+Exec=sh -c "exec \\"\\$(dirname -- \\"\\$1\\")/linux/launch-gui\\"" speedbuilder %k
+Terminal=false
+Categories=Game;

@@ -1,0 +1,7 @@
+## Interface: 16001
+## Title: SpeedBuilderForever Helper
+## Notes: Temporary Hekili icon calibration for SpeedBuilderForever.
+## Dependencies: Hekili
+## SavedVariablesPerCharacter: SpeedBuilderForeverReloadPending
+
+Calibration.lua

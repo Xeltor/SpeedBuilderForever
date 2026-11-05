@@ -1,58 +1,135 @@
 # SpeedBuilderForever
 
 SpeedBuilderForever reads two pixels from the first Hekili recommendation and maps
-the color pair to a key or chord. The Linux entry point is
-`linux/speedbuilder.py`.
+the color pair to a key or chord.
 
-- **X11** uses window capture and XTEST. The same backend also works for
-  XWayland windows when selected explicitly with `--backend x11`.
-- **Wayland** uses KDE Plasma 6 for focus and the toggle, the desktop portal
-  for permission, and PipeWire for capture. The game can use native Wayland
-  or XWayland. When prompted, choose the WoW window. Key output requires
-  a separate keyboard-control permission. This backend requires KWin.
-- The backend defaults to your session type. Put `--backend x11` or
-  `--backend wayland` before the subcommand to override it.
+## Open the desktop app
 
-### Setup
+Open **SpeedBuilderForever.desktop** from your file manager. If asked, allow
+the launcher to run. Keep the launcher with the rest of the project files.
 
-Use the distribution Python for the virtual environment so it can load the
-system Wayland bindings. On Fedora, native Wayland mode uses
-`python3-gobject-base`, `gstreamer1`, `gstreamer1-plugins-base`,
+The desktop app uses Qt 6 through PySide6 6.5 or later. On Fedora, install
+`python3-pyside6` and `python3-xlib` through your package manager. Native Wayland
+also needs `python3-gobject-base`, `gstreamer1`, `gstreamer1-plugins-base`,
 `pipewire-gstreamer`, and `xdg-desktop-portal-kde`.
+
+1. Set Hekili’s Primary display to one fixed-size icon. Keep it fully visible.
+2. Select a profile or click **New** and give it a name. Click **Locate icon**,
+   choose WoW from the list of open windows, and click
+   **Continue**. On Wayland, choose the same window when the desktop asks
+   what to share. SpeedBuilder brings WoW forward for capture. Keep the
+   recommendation visible until the preview opens, then drag a box around
+   the icon and click **Save icon position**. Keep the UI scale and window size
+   fixed afterward.
+3. Click **Learn from Hekili** to [preview and learn your spells](#learn-a-batch-from-hekili)
+   out of combat. Review the suggested keys and use **Edit key** to assign or
+   correct the key for a named spell. Editing a key uses the saved icon samples.
+4. Choose **Run profile** to have SpeedBuilder press matching keys in WoW.
+   SpeedBuilder brings WoW forward and the profile starts paused. Press the
+   in-game toggle to turn it on or pause it again. Switching away suspends input;
+   returning to the same WoW window resumes it if it was running. A manual pause
+   stays paused. Changing the window size or replacing the game window pauses
+   the profile until you re-arm it. The default repeat interval is 100 ms.
+
+If you move Hekili’s Primary icon or resize WoW, restore the saved layout or
+stop the session and choose **Recalibrate icon**. Keep the same icon size and
+appearance to reuse learned colors. Recalibration keeps your key assignments.
+If the app asks you to refresh shared icon samples, run **Learn from Hekili**.
+
+On desktops with a system tray, closing the window hides SpeedBuilderForever
+and keeps the current rotation session available. The tray shows when the
+rotation is armed or paused. Click to reopen the window, or right-click and
+choose **Stop session** or **Quit**. On desktops without a tray, closing exits.
+
+The app picks **Wayland** on a Wayland session and **X11** on an X11 session.
+Wayland needs KDE Plasma 6. When the desktop asks what to share, choose the
+WoW window. Key output needs a separate keyboard-control permission.
+To capture an XWayland game window directly, choose **X11** under **Settings**
+before locating the icon for a new profile.
+The default toggle is **F8** on Wayland and **backtick** on X11.
+To change it, open **Settings → Record toggle**, press the key or mouse button
+you want, then click **Apply settings**. Mouse buttons work with X11 and
+XWayland game windows, including with Wayland capture of an XWayland window.
+For a native Wayland game window, use **F1–F12**.
+
+Use the **Profile** list to switch between characters, specs, or layouts.
+Use **New**, **Rename**, or **Delete** to manage the list. The app remembers
+your selection and saves profiles automatically in
+`$XDG_CONFIG_HOME/speedbuilder/profiles/` (normally
+`~/.config/speedbuilder/profiles/`).
+
+## Learn a batch from Hekili
+
+1. Locate Hekili Forever v0.5.0's **Classic** Primary icon in SpeedBuilderForever.
+   Disable Masque and keep the icon clear of the upper-left corner. **Learn
+   from Hekili** installs the bundled helper automatically. If several installs
+   are found or the game is in an unusual location, select the WoW Forever
+   folder once.
+2. For a first install, restart WoW before selecting **Learn from Hekili** again.
+   For updates to the same addon folder, the app can reload the UI if
+   the running helper supports it, using `/sbf reload`. An older helper needs
+   a manual `/reload`.
+3. With WoW out of combat and chat closed, select **Learn from Hekili**.
+   The app automatically sends the setup command and refreshes keybindings.
+   On Wayland, allow keyboard control and share the WoW window
+   when prompted. SpeedBuilder brings WoW forward and uses the slash key to open
+   command chat. It only presses Enter after the helper confirms the entire
+   command in two fresh frames.
+4. Keep WoW focused until the batch completes. The helper temporarily previews
+   the full class ability catalog supported by Hekili at the Primary position,
+   including abilities learned at higher levels or through talents. Spell ranks
+   share one entry and key assignment; they do not require separate learning
+   when their icon is unchanged. Your character's available racial and item
+   actions are included too. Missing keybindings are left blank. The helper
+   reports suggested keys through a marker in the upper-left corner. The marker is hidden during
+   normal play. It appears only for the preview, confirmation of a complete
+   `/sbf` or `/sbf reload` command, and a brief setup completion acknowledgement.
+   Type `/sbf` again to stop a preview.
+5. Double-click a spell in the list to assign or change its **WoW key**.
+   **Clear key** keeps its learned colors for later. **Learn from Hekili** updates
+   saved keys from WoW, including changed or newly assigned bindings.
+   Spells without a detected binding are disabled.
+   A batch saves only after it finishes. **Recalibrate icon** updates the capture
+   position; use **Learn from Hekili** to refresh keys.
+6. Choose **Run profile** when ready. Cooldown sweeps and range tints can
+   change the sampled colors. Icon variants with unknown colors are skipped.
+
+Batch learning tries one or two extra pixels to distinguish spells that
+share the usual two colors. The spell list marks these samples as
+**resolved**. Unbound spells, unresolved shared colors, and unknown extra
+colors send no key. Run a fresh batch to add collision handling to an
+existing profile. If two actions still look identical, give one a different
+icon in Hekili and run the batch again.
+
+## Command-line reference
+
+The GUI and CLI use the same capture, recognition, and profile code. If using
+a virtual environment, create it with the distribution Python and
+`--system-site-packages` so Wayland can load the system bindings. The desktop
+launcher also uses that environment if it is present.
 
 ```sh
 /usr/bin/python3 -m venv --system-site-packages .venv
 .venv/bin/python -m pip install -r linux/requirements.txt
-```
-
-Set Hekili's Primary display to one fixed-size icon. Keep it fully visible and
-leave the UI scale and window size fixed after calibration. Effects such as a
-cooldown sweep or a range tint can change the sampled colors. Disable effects
-that interfere or learn the additional color pairs.
-
-```sh
 .venv/bin/python linux/speedbuilder.py setup --size 50
-.venv/bin/python linux/speedbuilder.py learn 1
-.venv/bin/python linux/speedbuilder.py learn Shift+2
+.venv/bin/python linux/speedbuilder.py learn-batch
 .venv/bin/python linux/speedbuilder.py run
 ```
 
-- During `setup`, focus WoW and hover the center of the icon before the
-  countdown ends. Pass the actual icon width in captured pixels to `--size`.
-- During each `learn`, focus WoW with the desired recommendation visible.
-  Move the pointer off the icon before the countdown ends. Repeat for each
-  key. Multiple color pairs can point to the same key.
-- While WoW has focus, press **F8** on Wayland or **backtick** on X11 to
-  toggle. Dry run prints detected keys. Press **Ctrl+C** in the terminal
-  to exit. Set a different toggle with `run --toggle F9`.
-- Use `run --send` to enable key output. The default minimum time between
-  presses is 100 ms. Losing game focus turns the tool off, and an unmatched
-  or stale capture produces no key press.
-- Profiles live in `~/.config/speedbuilder/forever-x11.json` and
-  `~/.config/speedbuilder/forever-wayland.json`, or under `$XDG_CONFIG_HOME`.
-  For a different layout or spec, put `--config PATH` before the subcommand.
-  Pass `--window TITLE` to `setup` if the exact game window title differs
-  from `World of Warcraft`.
+Put `--backend x11`, `--backend wayland`, or `--config PATH` before the
+subcommand to override the defaults. Use `setup --window TITLE` for a
+different exact window title and `run --toggle F9` or `run --toggle Mouse5`
+to change the toggle.
+Use `run --send` to enable key output and **Ctrl+C** to stop.
+Use `learn-batch --send` to start the helper by sending `/sbf` in WoW chat.
+With `learn-batch` alone, type `/sbf` yourself after capture starts.
+Batch learning refreshes saved keybindings by default. Add `--keep-keys` to
+preserve existing assignments and cleared keys.
+The manual `learn KEY` command samples the displayed icon after a countdown.
+Use it only when you can hold a known icon on screen throughout capture.
+For a manual install when using the CLI, copy
+[SpeedBuilderForeverHelper](addon/SpeedBuilderForeverHelper) into the Forever
+client's `Interface/AddOns/` directory.
 
 ## Original SpeedBuilder
 

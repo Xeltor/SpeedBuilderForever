@@ -21,8 +21,11 @@ standalone Linux tool for Hekili in WoW Forever.
   Hekili icon variants before weakening matching rules.
 - Start disarmed. Keep dry run as the default and require explicit `--send` for
   key output. Require a fresh, stable match and the calibrated game window in
-  focus. Disarm on focus loss or window size changes. Preserve the user toggle,
-  key-release cleanup, and configurable minimum interval between presses.
+  focus. Suspend input on focus loss and restore the previous armed state only
+  when the same game window regains focus, after fresh stable recognition.
+  Manual pauses must stay paused. Disarm on window replacement, capture failure,
+  or window size changes. Preserve the user toggle, key-release cleanup, and
+  configurable minimum interval between presses.
 - Scope capture to the selected game window. Use the desktop's permission
   prompts for native Wayland capture and input.
 

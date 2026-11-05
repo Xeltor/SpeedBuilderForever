@@ -3,7 +3,6 @@
 import json
 import math
 import os
-import re
 import tempfile
 import time
 import uuid
@@ -14,6 +13,8 @@ gi.require_version("Gst", "1.0")
 gi.require_version("GstVideo", "1.0")
 from gi.repository import Gio, GLib, Gst, GstVideo
 from Xlib import XK
+
+from toggle import WAYLAND_KEYS
 
 
 PORTAL = "org.freedesktop.portal.Desktop"
@@ -42,7 +43,7 @@ function publish(toggle) {
         result.x = cursor.x - rect.x;
         result.y = cursor.y - rect.y;
     }
-    callDBus(BUS, "/org/speedbuilder/Focus", "org.speedbuilder.Focus",
+    callDBus(BUS, RELAY_OBJECT, "org.speedbuilder.Focus",
         "Update", JSON.stringify(result));
 }
 let active = null;
@@ -76,6 +77,23 @@ if (SHORTCUT) {
 activated();
 """
 
+WINDOW_QUERY_SCRIPT = """
+const windows = workspace.windowList()
+    .filter(window => window.normalWindow && !window.deleted && window.caption);
+function report(result) {
+    callDBus(BUS, RELAY_OBJECT, "org.speedbuilder.Focus", "Update", JSON.stringify(result));
+}
+"""
+
+ACTIVATE_SCRIPT = """
+const matches = windows.filter(window => window.caption === TITLE);
+const active = workspace.activeWindow;
+if (matches.length === 1 && (FROM_TITLE === null || (active && active.caption === FROM_TITLE))) {
+    workspace.activeWindow = matches[0];
+}
+report(matches.length);
+"""
+
 
 class WaylandError(ValueError):
     pass
@@ -84,7 +102,8 @@ class WaylandError(ValueError):
 class Wayland:
     def __init__(self):
         self.bus = Gio.bus_get_sync(Gio.BusType.SESSION)
-        self.context = GLib.MainContext.default()
+        self.context = GLib.MainContext.get_thread_default() or GLib.MainContext.default()
+        self.relay_path = f"{RELAY_PATH}/{uuid.uuid4().hex}"
         self.sessions = []
         self.keyboard = None
         self.session_closed = False
@@ -114,7 +133,7 @@ class Wayland:
         while self.context.pending():
             self.context.iteration(False)
 
-    def start_focus(self, shortcut="", track_pointer=False):
+    def register_relay(self, receive):
         try:
             owner, = self.call("org.freedesktop.DBus", "/org/freedesktop/DBus",
                                "org.freedesktop.DBus", "GetNameOwner", "(s)", (KWIN,))
@@ -123,18 +142,23 @@ class Wayland:
 
         def relay_update(_bus, sender, _path, _interface, _method, values, invocation):
             if sender == owner:
-                previous = self.focus
-                self.focus = json.loads(values.unpack()[0])
-                if previous is None or previous["id"] != self.focus["id"]:
-                    self.focus_changed = time.monotonic()
-                    self.focus_generation += 1
-                    self.pending_toggle = False
-                self.pending_toggle |= self.focus["toggle"]
+                receive(json.loads(values.unpack()[0]))
             invocation.return_value(None)
 
         relay = Gio.DBusNodeInfo.new_for_xml(RELAY_XML).interfaces[0]
-        self.registration = self.bus.register_object(RELAY_PATH, relay, relay_update, None, None)
+        self.registration = self.bus.register_object(self.relay_path, relay, relay_update, None, None)
 
+    def start_focus(self, shortcut="", track_pointer=False):
+        def receive(focus):
+            previous = self.focus
+            self.focus = focus
+            if previous is None or previous["id"] != focus["id"]:
+                self.focus_changed = time.monotonic()
+                self.focus_generation += 1
+                self.pending_toggle = False
+            self.pending_toggle |= focus["toggle"]
+
+        self.register_relay(receive)
         saver = "org.freedesktop.ScreenSaver"
         saver_path = "/ScreenSaver"
         def lock_changed(_bus, _sender, _path, _interface, _name, values):
@@ -149,27 +173,32 @@ class Wayland:
         ))
         self.locked, = self.call(saver, saver_path, saver, "GetActive")
 
-        name = f"speedbuilder-{uuid.uuid4().hex}"
         header = (
-            f"const BUS = {json.dumps(self.bus.get_unique_name())};\n"
             f"const SHORTCUT = {json.dumps(shortcut)};\n"
             f"const TRACK_POINTER = {str(track_pointer).lower()};\n"
         )
+        self.run_relay(header + RELAY_SCRIPT, lambda: self.focus is not None,
+                       "KWin did not report the active window.")
+
+    def run_relay(self, body, received, missing_message):
+        name = f"speedbuilder-{uuid.uuid4().hex}"
         with tempfile.NamedTemporaryFile("w", suffix=".js", encoding="utf-8") as script:
-            script.write(header + RELAY_SCRIPT)
+            script.write(f"const BUS = {json.dumps(self.bus.get_unique_name())};\n")
+            script.write(f"const RELAY_OBJECT = {json.dumps(self.relay_path)};\n")
+            script.write(body)
             script.flush()
             number, = self.call(KWIN, "/Scripting", "org.kde.kwin.Scripting", "loadScript",
                                 "(ss)", (script.name, name))
             if number < 0:
-                raise WaylandError("KWin could not load SpeedBuilder's focus script.")
+                raise WaylandError("KWin could not load SpeedBuilder's window script.")
             self.script_name = name
             self.call(KWIN, f"/Scripting/Script{number}", "org.kde.kwin.Script", "run")
             deadline = time.monotonic() + 3
-            while self.focus is None and time.monotonic() < deadline:
+            while not received() and time.monotonic() < deadline:
                 self.pump()
                 time.sleep(.01)
-        if self.focus is None:
-            raise WaylandError("KWin did not report the active window.")
+        if not received():
+            raise WaylandError(missing_message)
 
     def request(self, interface, method, signature, args, options):
         token = "speedbuilder_" + uuid.uuid4().hex
@@ -227,7 +256,7 @@ class Wayland:
         return session
 
     def start(self, shortcut, track_pointer, send):
-        if shortcut and not re.fullmatch(r"F(?:[1-9]|1[0-2])", shortcut):
+        if shortcut and shortcut not in WAYLAND_KEYS:
             raise WaylandError("Use a function key (F1–F12) for the Wayland toggle.")
         self.start_focus(shortcut or "", track_pointer)
         Gst.init(None)
@@ -308,6 +337,10 @@ class Wayland:
     def identity(self, window):
         return (window["id"], self.focus_generation)
 
+    @staticmethod
+    def window_identity(window):
+        return window["id"]
+
     def size(self, window):
         if self.frame is None:
             return [int(window["width"]), int(window["height"])]
@@ -320,18 +353,45 @@ class Wayland:
         return (math.floor(window["x"] * width / window["width"]),
                 math.floor(window["y"] * height / window["height"]))
 
-    def sample(self, window, points):
-        if (self.frame is None or self.frame_time < self.focus_changed
-                or time.monotonic() - self.frame_time > .25):
+    def fresh_frame(self):
+        return (self.frame is not None and self.frame_time >= self.focus_changed
+                and time.monotonic() - self.frame_time <= .25)
+
+    def sample(self, window, points, refinements=None):
+        if not self.fresh_frame():
             return None
         size, stride, offset = self.layout()
         if not all(0 <= x < size[0] and 0 <= y < size[1] for x, y in points):
             raise WaylandError("The sample points are outside the shared window.")
         buffer = self.frame.get_buffer()
-        return ":".join(
+        base = ":".join(
             buffer.extract_dup(offset + y * stride + x * 4, 3).hex()
             for x, y in points
         )
+        extra = refinements.get(base) if refinements else None
+        if extra:
+            # These points were validated against the calibrated frame size before the run.
+            suffix = ":".join(buffer.extract_dup(offset + y * stride + x * 4, 3).hex()
+                              for x, y in extra)
+            return f"{base}:{suffix}"
+        return base
+
+    def snapshot(self, window, region=None):
+        if not self.fresh_frame():
+            raise WaylandError("No fresh preview was available. Keep WoW focused and try again.")
+        size, stride, offset = self.layout()
+        x, y, width, height = region if region else (0, 0, *size)
+        if not (0 <= x < x + width <= size[0] and 0 <= y < y + height <= size[1]):
+            raise WaylandError("The preview rectangle is outside the shared window.")
+        offset += y * stride + x * 4
+        buffer = self.frame.get_buffer()
+        rgb = bytearray(width * height * 3)
+        for y in range(height):
+            row = buffer.extract_dup(offset + y * stride, width * 4)
+            start = y * width * 3
+            for channel in range(3):
+                rgb[start + channel:start + width * 3:3] = row[channel::4]
+        return width, height, rgb
 
     def tap(self, codes, title, window_id):
         pressed = []
@@ -342,6 +402,9 @@ class Wayland:
                     break
                 self.key_event(code, 1)
                 pressed.append(code)
+            if pressed:
+                # Wine can miss a press released before its next input frame.
+                time.sleep(.02)
         finally:
             for code in reversed(pressed):
                 self.key_event(code, 0)
@@ -350,6 +413,10 @@ class Wayland:
     def key_event(self, code, state):
         self.call(PORTAL, PORTAL_PATH, REMOTE, "NotifyKeyboardKeysym",
                   "(oa{sv}iu)", (self.keyboard, {}, code, state))
+
+    @staticmethod
+    def request_activation(title, from_title=None):
+        request_activation(title, from_title)
 
     def close(self):
         if self.pipeline is not None:
@@ -371,3 +438,41 @@ class Wayland:
             self.bus.signal_unsubscribe(subscription)
         if self.registration:
             self.bus.unregister_object(self.registration)
+
+
+def query_windows(script, missing_message, *, activate=False):
+    context = GLib.MainContext.new()
+    context.push_thread_default()
+    desktop = None
+    try:
+        desktop = Wayland()
+        if activate:
+            locked, = desktop.call("org.freedesktop.ScreenSaver", "/ScreenSaver",
+                                   "org.freedesktop.ScreenSaver", "GetActive")
+            if locked:
+                raise WaylandError("Unlock the desktop before switching windows.")
+        result = []
+        desktop.register_relay(result.append)
+        desktop.run_relay(WINDOW_QUERY_SCRIPT + script, lambda: bool(result), missing_message)
+        return result[0]
+    except GLib.Error as problem:
+        raise WaylandError(missing_message) from problem
+    finally:
+        try:
+            if desktop is not None:
+                desktop.close()
+        finally:
+            context.pop_thread_default()
+
+
+def list_window_titles():
+    return query_windows("report(windows.map(window => window.caption));",
+                         "KWin did not report open windows.")
+
+
+def request_activation(title, from_title=None):
+    script = (f"const TITLE = {json.dumps(title)};\n"
+              f"const FROM_TITLE = {json.dumps(from_title)};\n" + ACTIVATE_SCRIPT)
+    count = query_windows(script, f"KWin could not bring {title!r} to the front.", activate=True)
+    if count != 1:
+        raise WaylandError(f"Expected one open window titled {title!r}, found {count}.")
