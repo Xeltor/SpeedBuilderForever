@@ -1,0 +1,4 @@
+PySide6-Essentials==6.8.3
+shiboken6==6.8.3
+python-xlib==0.33
+six==1.17.0

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=SpeedBuilderForever
+Comment=Learn Hekili recommendations and run your WoW Forever profile
+Exec=SpeedBuilderForever
+Icon=speedbuilderforever
+Terminal=false
+Categories=Game;
+StartupWMClass=SpeedBuilderForever

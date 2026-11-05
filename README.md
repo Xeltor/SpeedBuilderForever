@@ -3,6 +3,45 @@
 SpeedBuilderForever reads two pixels from the first Hekili recommendation and maps
 the color pair to a key or chord.
 
+## AppImage download
+
+Download the x86-64 AppImage from [GitHub Releases](https://github.com/Xeltor/SpeedBuilderForever/releases).
+The `.AppImage.tar.gz` download preserves its executable permission when extracted.
+For the standalone `.AppImage` download, enable **Allow executing file as program**
+in its file properties, or run `chmod +x SpeedBuilderForever-*.AppImage`, then open it.
+No root access or administrator setup is needed.
+
+The bundle includes Python, Qt, PyGObject, GStreamer, the PipeWire capture plugin,
+and the WoW helper. It targets Ubuntu 22.04+/Mint 21+ and newer x86-64 Linux
+systems, including Fedora, CachyOS and Bazzite. Native Wayland needs **KDE Plasma 6**
+with PipeWire and `xdg-desktop-portal-kde` running. GNOME/Cinnamon Wayland is not
+supported; use an X11 session there. XWayland game windows can also use the X11 backend.
+Your desktop's graphics drivers and portal services remain supplied by the OS.
+
+The required permissions are:
+
+| Access | How it is granted |
+| --- | --- |
+| Execute the application | The AppImage's executable file permission |
+| Capture WoW on Wayland | Choose the WoW window in the desktop sharing prompt |
+| Send keys on Wayland | Allow keyboard control in the desktop permission prompt |
+| Focus and toggle on KDE | Normal session D-Bus access to KWin |
+| Capture/input on X11 | Your current graphical session's X11 connection and XTEST |
+| Install/update the helper | Your user must be able to write to WoW's `Interface/AddOns` |
+| Save profiles | Your user's normal configuration folder |
+
+The AppImage runs as your normal user. It does not install services, change group
+membership, set elevated capabilities, or pre-grant capture/input permissions.
+The desktop sharing and keyboard-control prompts still apply. AppImages are not
+sandboxed, so these prompts do not act as a general filesystem sandbox.
+
+If FUSE is unavailable, run `./SpeedBuilderForever-*.AppImage --appimage-extract-and-run`.
+Use `--cli` before the regular command-line arguments, `--version` to print the
+version, and `--self-test` for offline package diagnostics. `SHA256SUMS` accompanies
+each release. Bundled dependency notices and matching source archives are also
+provided; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). No application-code
+license has been selected.
+
 ## Open the desktop app
 
 Open **SpeedBuilderForever.desktop** from your file manager. If asked, allow
@@ -139,3 +178,21 @@ project. The port used the
 [source at `04ba6de`](https://github.com/Xeltor/SpeedBuilder/tree/04ba6de7cb72328bb69a913e950f621209756569)
 as its reference. For the original profiles, definitions, and Windows setup,
 see that repository.
+
+## Build an AppImage
+
+The portable build uses an Ubuntu 22.04 container and pinned Python wheels:
+
+```sh
+docker build -f packaging/appimage/Containerfile -t speedbuilder-appimage .
+mkdir -p dist .appimage-work
+docker run --rm -v "$PWD:/source:ro" -v "$PWD/dist:/out" \
+  -v "$PWD/.appimage-work:/work" speedbuilder-appimage \
+  bash /source/packaging/appimage/build.sh /out /work
+```
+
+Podman can be used instead. Build products and dependency sources go into `dist/`;
+download caches and the extracted AppDir stay in `.appimage-work/`. The build runs
+the Python/Lua suites, a bundled dependency/video check, a disposable X11 window
+capture/input check, and a final AppImage self-test. Native Wayland portal behavior
+requires a separate interactive check on a supported desktop.

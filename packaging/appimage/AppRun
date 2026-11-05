@@ -1,0 +1,31 @@
+#!/bin/sh
+set -eu
+bundle_dir=$(CDPATH= cd -- "$(dirname -- "$(readlink -f -- "$0")")" && pwd)
+application_dir="$bundle_dir/usr/share/speedbuilder"
+export PYTHONHOME="$bundle_dir/usr"
+export PYTHONNOUSERSITE=1
+export PYTHONDONTWRITEBYTECODE=1
+export PYTHONPATH="$bundle_dir/usr/lib/python3.10/site-packages:$bundle_dir/usr/lib/python3/dist-packages:$application_dir/linux"
+export LD_LIBRARY_PATH="$bundle_dir/usr/lib:$bundle_dir/usr/lib/pipewire-0.3:$bundle_dir/usr/lib/python3.10/site-packages/PySide6/Qt/lib"
+export QT_PLUGIN_PATH="$bundle_dir/usr/lib/python3.10/site-packages/PySide6/Qt/plugins"
+export QT_QPA_PLATFORM_PLUGIN_PATH="$QT_PLUGIN_PATH/platforms"
+export GI_TYPELIB_PATH="$bundle_dir/usr/lib/girepository-1.0"
+export GST_PLUGIN_SYSTEM_PATH_1_0=
+export GST_PLUGIN_PATH_1_0="$bundle_dir/usr/lib/gstreamer-1.0"
+export GST_PLUGIN_SCANNER_1_0="$bundle_dir/usr/libexec/gst-plugin-scanner"
+cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/speedbuilder"
+mkdir -p "$cache_dir"
+export GST_REGISTRY_1_0="$cache_dir/gstreamer-registry-appimage-0.1.bin"
+export SPA_PLUGIN_DIR="$bundle_dir/usr/lib/spa-0.2"
+export PIPEWIRE_MODULE_DIR="$bundle_dir/usr/lib/pipewire-0.3"
+export PIPEWIRE_CONFIG_DIR="$bundle_dir/usr/share/pipewire"
+export PIPEWIRE_CONFIG_NAME=client.conf
+unset PIPEWIRE_CONFIG_PREFIX SPA_SUPPORT_LIB
+unset PYTHONSTARTUP QML2_IMPORT_PATH QML_IMPORT_PATH
+case "${1:-}" in
+    --python) shift; exec "$bundle_dir/usr/bin/python3.10" "$@" ;;
+    --version) cat "$application_dir/VERSION"; exit 0 ;;
+    --self-test) shift; exec "$bundle_dir/usr/bin/python3.10" "$application_dir/packaging/appimage/self_test.py" "$@" ;;
+    --cli) shift; exec "$bundle_dir/usr/bin/python3.10" "$application_dir/linux/speedbuilder.py" "$@" ;;
+esac
+exec "$bundle_dir/usr/bin/python3.10" "$application_dir/linux/gui.py" "$@"
